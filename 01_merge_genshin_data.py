@@ -1,75 +1,76 @@
 import pandas as pd
+import re
 
 # Load datasets
-charac_df = pd.read_csv("data/raw_data/Genshin charac rev (by charac).csv")
-genshin_df = pd.read_csv("data/raw_data/genshin.csv", encoding="ISO-8859-1")
 banner_df = pd.read_csv("data/raw_data/Genshin charac rev (by banner).csv")
+metadata_df = pd.read_csv("data/raw_data/genshin.csv", encoding="ISO-8859-1")
 
-# Preview shapes
-print("Character Revenue Data:", charac_df.shape)
-print("Character Metadata:", genshin_df.shape)
-print("Banner Revenue Data:", banner_df.shape)
+# Step 1: Normalize character names in banner dataset
+def clean_char_name(name):
+    # Split characters on '&' and clean each one
+    names = name.split('&')
+    cleaned = []
+    for n in names:
+        n = n.strip()
+        # Remove rerun info like (2Nd Rerun), extra spaces
+        n = re.sub(r"\(.*?\)", "", n)
+        n = n.replace("  ", " ").strip()
+        cleaned.append(n)
+    return cleaned
 
-# Clean character names for merging
-charac_df["char_name_cleaned"] = charac_df["5_star_characters"].str.lower().str.strip()
-genshin_df["char_name_cleaned"] = genshin_df["character_name"].str.lower().str.strip()
+# Explode banner dataset
+rows = []
 
-# Preview cleaned names
-print("\nSample cleaned names:")
-print(charac_df[["5_star_characters", "char_name_cleaned"]].head(3))
-print(genshin_df[["character_name", "char_name_cleaned"]].head(3))
+for idx, row in banner_df.iterrows():
+    banner = row["version_name"]
+    revenue = row["revenue"]
+    raw_char_string = row["5_star_characters"]
+    
+    try:
+        revenue = float(str(revenue).replace(",", ""))
+    except:
+        continue  # Skip if revenue is missing or corrupted
 
-# Merge metadata and revenue based on cleaned names
-merged_char_df = pd.merge(
-    charac_df,
-    genshin_df,
-    on="char_name_cleaned",
-    how="left",
-    suffixes=("_rev", "_meta")
-)
+    for character in clean_char_name(raw_char_string):
+        rows.append({
+            "character": character,
+            "banner": banner,
+            "revenue": revenue
+        })
 
-# Preview merged data
-print("\nMerged character dataset preview:")
-print(merged_char_df[[
-    "char_name_cleaned", "5_star_characters", "revenue", "rarity", "vision", "region"
-]].head(5))
+exploded_df = pd.DataFrame(rows)
 
-# Clean character names in banner_df
-banner_df["char_name_cleaned"] = banner_df["5_star_characters"].str.lower().str.strip()
+# Step 2: Aggregate total revenue and banners per character
+agg_df = exploded_df.groupby("character").agg(
+    total_revenue_usd=pd.NamedAgg(column="revenue", aggfunc="sum"),
+    banners_appeared_on=pd.NamedAgg(column="banner", aggfunc=lambda x: list(set(x)))
+).reset_index()
 
-# Group by character and collect list of banners they appeared on
-banner_lists = banner_df.groupby("char_name_cleaned")["version_name"].apply(list).reset_index()
-banner_lists.rename(columns={"version_name": "banners_appeared_on"}, inplace=True)
+# Step 3: Prepare metadata
+metadata_df["character_cleaned"] = metadata_df["character_name"].str.strip()
 
-# Merge banner list into final character dataset
+# Step 4: Merge with metadata
 final_df = pd.merge(
-    merged_char_df,
-    banner_lists,
-    on="char_name_cleaned",
+    agg_df,
+    metadata_df,
+    left_on="character",
+    right_on="character_cleaned",
     how="left"
 )
 
-# Drop unnecessary columns from final_df
-columns_to_remove = [
-    "char_name_cleaned",
-    "character_name", "character_url", "portrait_url",
-    "vision_url", "weapon_url", "rarity_url", "region_url",
-    "weapon_type", "constellation", "title", "description"
-]
-
-final_df.drop(columns=[col for col in columns_to_remove if col in final_df.columns], inplace=True)
-
-# Rename and reorder final columns
-final_df.rename(columns={
-    "5_star_characters": "character",
-    "revenue": "total_revenue_usd"
-}, inplace=True)
-
+# Step 5: Select only relevant columns
 final_df = final_df[[
-    "character", "rarity", "vision", "region", "total_revenue_usd", "banners_appeared_on"
+    "character",
+    "rarity",
+    "vision",
+    "region",
+    "total_revenue_usd",
+    "banners_appeared_on"
 ]]
 
-# Save cleaned 5-star character data
-final_df.to_csv("data/clean_data/merged_character_data.csv", index=False)
-print("Cleaned data exported.")
+# Optional: sort by revenue
+final_df = final_df.sort_values(by="total_revenue_usd", ascending=False)
 
+# Step 6: Export cleaned data
+final_df.to_csv("data/clean_data/merged_character_data.csv", index=False)
+print("Cleaned data exported successfully.")

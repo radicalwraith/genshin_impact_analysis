@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: genshin_analytics
+    database: genshin-analytics       # Your GCP project ID
+    schema: genshin_dataset           # Your BigQuery dataset name
+    tables:
+      - name: character_metadata
+      - name: character_revenue
+      - name: character_popularity
