@@ -61,7 +61,7 @@ I am still not done with this project yet as I am exploring more datasets online
 ⸻
 
 Want to explore the dashboard? [[Live Looker Studio Link](https://lookerstudio.google.com/reporting/990b0ccd-d8a5-417f-ad85-6fb075ef77b6)]
-
+![Dashboard Screenshot](assets/dashboard.png)
 ⸻
 
 Made by a Genshin fan who loves data.
